@@ -1,0 +1,39 @@
+GENOME_FA = "/data/Sus_scrofa.Sscrofa11.1.dna.toplevel.fa"
+GENOME_GTF = "/data/Genomes/Pig/Sus_scrofa.Sscrofa11.1.94.gtf"
+HISAT2_INDEX_PREFIX = "/data/Pig/Hisat2_Index/Sus_scrofa.Sscrofa11.1"
+
+rule build_hisat_index:
+    input:
+        genome_fa=GENOME_FA,
+    output: expand(f"{HISAT2_INDEX_PREFIX}.{{ix}}.ht2", ix=range(1, 9))
+    log: "/data/Genomes/Pig/Hisat2_Index/build.log"
+    threads: 8
+    shell:
+        "hisat2-build -p {threads} {input.genome_fa} "
+        "{HISAT2_INDEX_PREFIX} "
+        "2>{log}"
+
+SAMPLES, = glob_wildcards('/data3/Payal/Projects/Camille/G189_2/{sample}_S2_R1_001.fastq.gz')
+
+rule align_hisat2:
+    input:
+        hisat2_index=expand(f"{HISAT2_INDEX_PREFIX}.{{ix}}.ht2", ix=range(1, 9)),
+        fastq1="/data/{sample}_S2_R1_001.fastq.gz",
+        fastq2="/data/{sample}_S2_R3_001.fastq.gz",
+    output: "align_hisat2_/{sample}.bam"
+    log: "align_hisat2_/{sample}.log"
+    threads: 8
+    shell:
+        "hisat2 -p {threads} -x {HISAT2_INDEX_PREFIX} "
+        "-1 {input.fastq1} -2 {input.fastq2}  2>{log} | "
+        " samtools sort -@ {threads} -o {output}"
+
+rule htseq_counts:
+        input:
+        bam = "align_hisat2_/{sample}.bam
+        GENOME_GTF = "/data/Genomes/Pig/Sus_scrofa.Sscrofa11.1.94.gtf"
+        output: "htseq_counts_/{sample}.txt"
+        shell:  htseq-count --format bam --order pos -t exon {input.bam} {input.GENOME_GTF} > {output}
+
+rule align_all_samples:
+   input: expand("align_hisat2_/{sample}.bam", sample=SAMPLES)
